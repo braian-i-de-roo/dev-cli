@@ -2,8 +2,21 @@ import { exec } from "https://deno.land/x/exec/mod.ts";
 
 const configFileName = ".dev_cli_git_config.json";
 
+const tokenFileName = `${Deno.env.get("HOME")}/.github_token`;
+
+let githubToken = "";
+try {
+  githubToken = await Deno.readTextFile(tokenFileName);
+} catch (e) {
+  throw new Error("Github token not found");
+}
+
+const githubApiUrl = "https://api.github.com/repos"
+
 type GitConfig = {
-  defaultBranch: string;
+  defaultBranch?: string;
+  githubRepoOwner: string;
+  githubRepoName: string;
 };
 
 const getConfigFile = async (): Promise<GitConfig | null> => {
@@ -19,9 +32,22 @@ const writeConfigFile = async (config: GitConfig): Promise<void> => {
   await Deno.writeTextFile(`./${configFileName}`, JSON.stringify(config));
 };
 
+const githubRequest = (config: GitConfig, url: string, data?: Record<string, unknown>) => {
+  return fetch(`${githubApiUrl}/${config.githubRepoOwner}/${config.githubRepoName}${url}`, {
+    ...data,
+    headers: {
+      Accept: "application/vnd.github.v3+json",
+      Authorization: `Bearer ${githubToken}`,
+    }
+  })
+}
+
 export const getDefaultBranch = async (): Promise<string> => {
   const configFile = await getConfigFile();
-  if (configFile) {
+  if (!configFile) {
+    throw new Error("config file not found");
+  }
+  if (configFile.defaultBranch) {
     return configFile.defaultBranch;
   }
   const defaultBranchRes = await exec(
@@ -31,6 +57,8 @@ export const getDefaultBranch = async (): Promise<string> => {
     const defaultBranch = (defaultBranchRes.output as string).trim();
     await writeConfigFile({
       defaultBranch: defaultBranch,
+      githubRepoOwner: configFile.githubRepoOwner,
+      githubRepoName: configFile.githubRepoName,
     });
     return defaultBranch;
   }
@@ -106,3 +134,22 @@ export const updateBranch = async (): Promise<void> => {
     throw new Error("could not update branch");
   }
 };
+
+export const createDraftPullRequest = async (prName: string, branchName: string): Promise<void> => {
+  const configFile = await getConfigFile();
+  if (!configFile) {
+    throw new Error("config file not found");
+  }
+  const res = await githubRequest(configFile, "/pulls", {
+    method: "POST",
+    body: JSON.stringify({
+      title: prName,
+      head: branchName,
+      base: await getDefaultBranch(),
+      draft: true,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error("could not create pull request");
+  }
+}
