@@ -257,6 +257,7 @@ const chooseTask = (tasks: Task[]): Promise<Task> => {
     {
       type: "list",
       name: "SelectedTask",
+      message: "Select a task",
       choices: tasks.map((task: Task) => task.name),
     },
   ])
@@ -305,6 +306,7 @@ const taskActionLoop = async (
 };
 
 export const tasksAction = async (): Promise<void> => {
+  console.log('fetching tasks...');
   const tasks = await getOpenTasks();
   const selectedTask = await chooseTask(tasks);
   await taskActionLoop(selectedTask, false);
