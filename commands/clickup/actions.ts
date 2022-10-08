@@ -1,6 +1,6 @@
 import { sub } from "https://cdn.skypack.dev/date-fns";
 import inquirer from "npm:inquirer";
-import { createBranch } from "../git/actions.ts";
+import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
 
 const configFileName = ".dev_cli_clickup_config.json";
 const cacheFileName = ".dev_cli_clickup_cache.json";
@@ -97,6 +97,7 @@ const clickupRequest = (url: string, data?: Record<string, unknown>) => {
   return fetch(`${clickupApiUrl}${url}`, {
     ...data,
     headers: {
+      "Content-Type": "application/json",
       "Authorization": clickupToken,
     },
   });
@@ -248,7 +249,7 @@ export const getOpenTasks = async (): Promise<Task[]> => {
   return resJson.tasks
     .filter((task: Task) => {
       const status = task.status.status.toLowerCase();
-      return status === "open" || status === "in progress";
+      return status === "open" || status === "to do";
     });
 };
 
@@ -265,6 +266,20 @@ const chooseTask = (tasks: Task[]): Promise<Task> => {
       return tasks.find((task: Task) => task.name === answers.SelectedTask);
     });
 };
+
+const genPrName = (task: Task): string => {
+  const bugReplace = task.name.replace("[BUG]", "Fix:");
+  return bugReplace.replace("[FEATURE]", "Feature:");
+}
+
+const genBranchName = (task: Task): string => {
+  return task.name
+    .replace(/[^a-zA-Z0\d\-\[\] ]/g, "")
+    .replace("[BUG] ", "fix/")
+    .replace("[FEATURE] ", "feature/")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+}
 
 const chooseTaskAction = async (task: Task): Promise<boolean> => {
   const actionResponse = await inquirer.prompt([
@@ -283,9 +298,16 @@ const chooseTaskAction = async (task: Task): Promise<boolean> => {
       return answers.SelectedAction;
     });
   if (actionResponse === "Start working on it") {
+    console.log('moving task to "In Progress"');
     await moveTask(task.id, "In Progress");
-    const branchName = `[${task.id}] ${task.name}`;
+    const prName = `[${task.id}] ${genPrName(task)}`;
+    const branchName = genBranchName(task);
+    console.log('creating branch');
     await createBranch(branchName);
+    console.log('pushing branch');
+    await pushBranch()
+    console.log('creating draft PR');
+    await createDraftPullRequest(prName, branchName)
     return true;
   } else if (actionResponse === "View Description") {
     console.log(task.description);
