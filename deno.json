@@ -1,5 +1,6 @@
 {
   "tasks": {
-    "generate": "deno bundle index.ts >> ./build/dev-cli.ts && deno compile -A --unstable --output ./build/dev-cli ./index.ts"
+    "generate": "deno bundle index.ts >> ./build/dev-cli.ts && deno compile -A --unstable --output ./build/dev-cli ./index.ts",
+    "start": "deno run --allow-env --allow-read --allow-write --allow-run --allow-net --unstable index.ts"
   }
 }
