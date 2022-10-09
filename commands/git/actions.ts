@@ -36,7 +36,7 @@ const githubRequest = (config: GitConfig, url: string, data?: Record<string, unk
   return fetch(`${githubApiUrl}/${config.githubRepoOwner}/${config.githubRepoName}${url}`, {
     ...data,
     headers: {
-      Accept: "application/vnd.github.v3+json",
+      Accept: "application/vnd.github+json",
       Authorization: `Bearer ${githubToken}`,
     }
   })
@@ -102,10 +102,13 @@ export const createBranch = async (branchName: string): Promise<void> => {
     if (isDirty) {
       await stashCurrent();
     }
-    const res = await exec(
-      `git checkout ${defaultBranch} && git pull && git checkout -b ${branchName}`,
-    );
-    if (!res.status.success) {
+    console.log('checking out default branch');
+    await exec(`git checkout ${defaultBranch}`);
+    console.log('updating default branch');
+    await exec(`git pull`);
+    console.log('creating new branch from default')
+    const branchRes = await exec(`git checkout -b ${branchName}`);
+    if (!branchRes.status.success) {
       throw new Error("could not create branch");
     }
   }
@@ -135,7 +138,12 @@ export const updateBranch = async (): Promise<void> => {
   }
 };
 
-export const createDraftPullRequest = async (prName: string, branchName: string): Promise<void> => {
+const createPullRequest = async (
+  taskId: number,
+  prName: string,
+  branchName: string,
+  extraData?: Record<string, unknown>
+): Promise<void> => {
   const configFile = await getConfigFile();
   if (!configFile) {
     throw new Error("config file not found");
@@ -146,10 +154,25 @@ export const createDraftPullRequest = async (prName: string, branchName: string)
       title: prName,
       head: branchName,
       base: await getDefaultBranch(),
-      draft: true,
+      body: `Card [[${taskId}]](https://app.clickup.com/t/${taskId})`,
+      ...extraData,
     }),
   });
   if (!res.ok) {
-    throw new Error("could not create pull request");
+    const response = await res.json()
+    throw new Error(response.message);
+  }
+}
+
+export const createDraftPullRequest = async (taskId: number, prName: string, branchName: string): Promise<void> => {
+  try {
+    await createPullRequest(taskId, prName, branchName, { draft: true });
+  } catch (e) {
+    if (e.message === 'Draft pull requests are not supported in this repository.') {
+      console.log('draft pull requests are not supported on this repository, creating regular pull request');
+      await createPullRequest(taskId, prName, branchName);
+    } else {
+      throw new Error("could not create pull request");
+    }
   }
 }
