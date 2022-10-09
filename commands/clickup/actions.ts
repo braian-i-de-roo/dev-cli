@@ -1,6 +1,7 @@
 import { sub } from "https://cdn.skypack.dev/date-fns";
 import inquirer from "npm:inquirer";
 import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
+import {exec} from "https://deno.land/x/exec/mod.ts";
 
 const configFileName = ".dev_cli_clickup_config.json";
 const cacheFileName = ".dev_cli_clickup_cache.json";
@@ -304,10 +305,12 @@ const chooseTaskAction = async (task: Task): Promise<boolean> => {
     const branchName = genBranchName(task);
     console.log('creating branch');
     await createBranch(branchName);
+    console.log('creating empty commit');
+    await exec(`git commit --allow-empty -m "create draft PR"`);
     console.log('pushing branch');
-    await pushBranch()
+    await pushBranch();
     console.log('creating draft PR');
-    await createDraftPullRequest(prName, branchName)
+    await createDraftPullRequest(task.id, prName, branchName);
     return true;
   } else if (actionResponse === "View Description") {
     console.log(task.description);
