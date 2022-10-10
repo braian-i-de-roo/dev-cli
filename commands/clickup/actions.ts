@@ -2,6 +2,7 @@ import { sub } from "https://cdn.skypack.dev/date-fns";
 import inquirer from "npm:inquirer";
 import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
 import {exec} from "https://deno.land/x/exec/mod.ts";
+import chalk from "https://esm.sh/chalk";
 
 const configFileName = ".dev_cli_clickup_config.json";
 const cacheFileName = ".dev_cli_clickup_cache.json";
@@ -60,6 +61,8 @@ type Task = {
   status: {
     status: string;
   };
+  priority: Priority | null;
+  tags: Tag[];
 };
 
 const getConfigFile = async (): Promise<ClickupConfig | null> => {
@@ -254,13 +257,68 @@ export const getOpenTasks = async (): Promise<Task[]> => {
     });
 };
 
+const getPriorityString = (priority: Priority | null): string => {
+  let text
+  if (priority) {
+    switch (priority.priority) {
+      case "urgent":
+        text = chalk.red.bold("Urgent");
+        break;
+      case "high":
+        text = chalk.yellow("High");
+        break;
+      case "normal":
+        text =chalk.blue("Normal");
+        break;
+      case "low":
+        text = chalk.grey("Low");
+        break
+      default:
+        text = chalk.grey("Low");
+    }
+  } else {
+    text = chalk.blue("Normal")
+  }
+  return `${chalk.white("[")}${text}${chalk.white("]")}`
+}
+
+const getTagString = (tag: Tag): string => {
+  switch (tag.name) {
+    case "bug":
+      return chalk.bgRed("Bug");
+    case "blocked":
+      return chalk.bgRed("Blocked");
+    case "web":
+      return chalk.bgBlue("Web");
+    case "mobile":
+      return chalk.bgBlue("Mobile");
+    case "backend":
+      return chalk.bgBlue("Backend");
+    default:
+      return chalk.bgGrey(tag.name);
+  }
+}
+
+const getTagsString = (tags: Tag[]): string => {
+  if (tags.length === 0) {
+    return "";
+  }
+  const aux = tags.map((tag) => getTagString(tag));
+  return `${chalk.white("[")}${aux.join(" ")}${chalk.white("]")}`;
+}
+
 const chooseTask = (tasks: Task[]): Promise<Task> => {
   return inquirer.prompt([
     {
       type: "list",
       name: "SelectedTask",
       message: "Select a task",
-      choices: tasks.map((task: Task) => task.name),
+      choices: tasks.map((task: Task) => {
+        const aux = task.name
+        const priorityString = getPriorityString(task.priority)
+        const tagsString = getTagsString(task.tags)
+        return `${aux} ${priorityString} ${tagsString}`
+      }),
     },
   ])
     .then((answers: { SelectedTask: string }) => {
