@@ -1,3 +1,60 @@
+type ClickupConfig = {
+  teamName: string;
+  teamId?: number;
+  spaceName: string;
+  spaceId?: number;
+  backlogFolderName: string;
+  backlogFolderId?: number;
+  sprintFolderName: string;
+  sprintFolderId?: number;
+  backlogLists?: string[];
+};
+
+type ClickupCache = {
+  currentSprintListId: number;
+  date: number;
+};
+
+type InnerResponse<T> = {
+  body: T;
+  clickupConfig: ClickupConfig;
+};
+
+type Team = {
+  id: number;
+  name: string;
+};
+
+type Space = {
+  id: number;
+  name: string;
+};
+
+type Folder = {
+  id: number;
+  name: string;
+};
+
+type Assignee = {
+  id: number;
+}
+
+type Task = {
+  id: number;
+  name: string;
+  description: string;
+  status: {
+    status: string;
+  };
+  priority: Priority | null;
+  tags: Tag[];
+  assignees: Assignee[];
+};
+
+type List = {
+  id: number;
+}
+
 type Priority = {
   id: string,
   priority: 'urgent' | 'high' | 'normal' | 'low',
@@ -9,4 +66,10 @@ type Tag = {
   name: string,
   tag_fg: string,
   tag_bg: string,
+}
+
+type CachedData<A> = {
+  lastUpdated: number,
+  ttl: number,
+  data: A,
 }

@@ -1,111 +1,18 @@
-import {sub} from "https://cdn.skypack.dev/date-fns";
 import inquirer from "npm:inquirer";
 import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
 import {exec} from "https://deno.land/x/exec/mod.ts";
 import chalk from "https://esm.sh/chalk";
-
-const configFileName = ".dev_cli_clickup_config.json";
-const cacheFileName = ".dev_cli_clickup_cache.json";
-
-const tokenFileName = `${Deno.env.get("HOME")}/.clickup_token`;
+import {getCachedConfig, getConfig, getPrivateConfig, writeCachedConfig, writeConfig} from "../../utils/configUtils.ts";
 
 let clickupToken = "";
 try {
-  clickupToken = await Deno.readTextFile(tokenFileName);
+  clickupToken = await getPrivateConfig<string>('clickupToken')
 } catch (e) {
   throw new Error("Clickup token not found");
 }
 
 const clickupApiUrl = "https://api.clickup.com/api/v2";
 
-type ClickupConfig = {
-  teamName: string;
-  teamId?: number;
-  spaceName: string;
-  spaceId?: number;
-  backlogFolderName: string;
-  backlogFolderId?: number;
-  sprintFolderName: string;
-  sprintFolderId?: number;
-  backlogLists?: string[];
-};
-
-type ClickupCache = {
-  currentSprintListId: number;
-  date: number;
-};
-
-type InnerResponse<T> = {
-  body: T;
-  clickupConfig: ClickupConfig;
-};
-
-type Team = {
-  id: number;
-  name: string;
-};
-
-type Space = {
-  id: number;
-  name: string;
-};
-
-type Folder = {
-  id: number;
-  name: string;
-};
-
-type Assignee = {
-  id: number;
-}
-
-type Task = {
-  id: number;
-  name: string;
-  description: string;
-  status: {
-    status: string;
-  };
-  priority: Priority | null;
-  tags: Tag[];
-  assignees: Assignee[];
-};
-
-type List = {
-  id: number;
-}
-
-const getConfigFile = async (): Promise<ClickupConfig | null> => {
-  try {
-    const res = await Deno.readTextFile(`./${configFileName}`);
-    return JSON.parse(res);
-  } catch (e) {
-    return null;
-  }
-};
-
-const writeConfigFile = async (config: ClickupConfig): Promise<void> => {
-  await Deno.writeTextFile(`./${configFileName}`, JSON.stringify(config));
-};
-
-const getCacheFile = async (): Promise<ClickupCache | null> => {
-  try {
-    const res = await Deno.readTextFile(`./${cacheFileName}`);
-    return JSON.parse(res);
-  } catch (e) {
-    return null;
-  }
-};
-
-const writeCacheFile = async (cache: ClickupCache): Promise<void> => {
-  await Deno.writeTextFile(`./${cacheFileName}`, JSON.stringify(cache));
-};
-
-const verifyCache = (cache: ClickupCache): boolean => {
-  const yesterday = sub(new Date(), { days: 1 });
-  const cacheDate = new Date(cache.date);
-  return yesterday < cacheDate;
-};
 
 const clickupRequest = (url: string, data?: Record<string, unknown>) => {
   return fetch(`${clickupApiUrl}${url}`, {
@@ -135,7 +42,7 @@ const getTeamId = async (
     ...config,
     teamId: team.id,
   };
-  await writeConfigFile(newConfig);
+  await writeConfig('clickup', newConfig);
   return {
     body: team.id,
     clickupConfig: newConfig,
@@ -169,7 +76,7 @@ const getSpaceId = async (
     ...updatedConfig,
     spaceId: space.id,
   };
-  await writeConfigFile(newConfig);
+  await writeConfig('clickup', newConfig);
   return {
     body: space.id,
     clickupConfig: newConfig,
@@ -203,7 +110,7 @@ export const getCurrentSprintFolderId = async (
     ...updatedConfig,
     sprintFolderId: folder.id,
   };
-  await writeConfigFile(newConfig);
+  await writeConfig('clickup', newConfig);
   return {
     body: folder.id,
     clickupConfig: newConfig,
@@ -213,8 +120,8 @@ export const getCurrentSprintFolderId = async (
 export const getCurrentSprintListId = async (
   config: ClickupConfig,
 ): Promise<InnerResponse<number>> => {
-  const cache = await getCacheFile();
-  if (cache && verifyCache(cache)) {
+  const cache = await getCachedConfig<ClickupCache>("clickup").catch(() => null);
+  if (cache) {
     return {
       body: cache.currentSprintListId,
       clickupConfig: config,
@@ -231,16 +138,23 @@ export const getCurrentSprintListId = async (
   }
   const res = await clickupRequest(`/folder/${sprintFolderId}/list`);
   const resJson = await res.json();
-  const list = resJson.lists[resJson.lists.length - 1];
-  const newCache = {
-    currentSprintListId: list.id,
-    date: new Date().getTime(),
-  };
-  await writeCacheFile(newCache);
-  return {
-    body: list.id,
-    clickupConfig: newConfig,
-  };
+  if (resJson.lists && resJson.lists.length > 0) {
+    const list = resJson.lists[resJson.lists.length - 1];
+    const newCache = {
+      currentSprintListId: list.id,
+      date: new Date().getTime(),
+    };
+    await writeCachedConfig("clickup", newCache, 86400);
+    return {
+      body: list.id,
+      clickupConfig: newConfig,
+    };
+  } else {
+    return {
+      body: null,
+      clickupConfig: newConfig,
+    };
+  }
 };
 
 const moveTask = (taskId: number, status: string) => {
@@ -277,7 +191,7 @@ const getBacklogFolderId = async (config: ClickupConfig) => {
     ...updatedConfig,
     backlogFolderId: folder.id,
   };
-  await writeConfigFile(newConfig);
+  await writeConfig('clickup', newConfig);
   return {
     body: folder.id,
     clickupConfig: newConfig,
@@ -304,7 +218,7 @@ const getBacklogListsIds = async (config: ClickupConfig): Promise<string[]> => {
     ...newConfig,
     backlogLists: lists,
   }
-  await writeConfigFile(newConfigWithLists);
+  await writeConfig('clickup', newConfigWithLists);
   return lists;
 }
 
@@ -327,7 +241,7 @@ const getOpenTasks = async (config: ClickupConfig): Promise<Task[]> => {
 };
 
 const getAllOpenTasks = async (): Promise<Task[]> => {
-  const config = await getConfigFile();
+  const config = await getConfig<ClickupConfig>("clickup");
   if (!config) {
     throw new Error("Clickup config file not found");
   }

@@ -1,3 +1,3 @@
 .idea/
 build/
-.dev_cli_clickup_cache.json
+.dev_cli/.private/
