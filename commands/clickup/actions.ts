@@ -27,6 +27,7 @@ type ClickupConfig = {
   backlogFolderId?: number;
   sprintFolderName: string;
   sprintFolderId?: number;
+  backlogLists?: string[];
 };
 
 type ClickupCache = {
@@ -64,6 +65,10 @@ type Task = {
   priority: Priority | null;
   tags: Tag[];
 };
+
+type List = {
+  id: number;
+}
 
 const getConfigFile = async (): Promise<ClickupConfig | null> => {
   try {
@@ -242,11 +247,77 @@ const moveTask = (taskId: number, status: string) => {
   });
 };
 
-export const getOpenTasks = async (): Promise<Task[]> => {
-  const config = await getConfigFile();
-  if (!config) {
-    throw new Error("Clickup config file not found");
+const getBacklogFolderId = async (config: ClickupConfig) => {
+  if (config.backlogFolderId) {
+    return {
+      body: config.backlogFolderId,
+      clickupConfig: config,
+    };
   }
+  let spaceId;
+  let updatedConfig = config;
+  if (!config.spaceId) {
+    const { body, clickupConfig } = await getSpaceId(config);
+    spaceId = body;
+    updatedConfig = clickupConfig;
+  } else {
+    spaceId = config.spaceId;
+  }
+  const res = await clickupRequest(`/space/${spaceId}/folder`);
+  const resJson = await res.json();
+  const folder = resJson.folders.find((folder: Folder) =>
+    folder.name === updatedConfig.backlogFolderName
+  );
+  const newConfig = {
+    ...updatedConfig,
+    backlogFolderId: folder.id,
+  };
+  await writeConfigFile(newConfig);
+  return {
+    body: folder.id,
+    clickupConfig: newConfig,
+  };
+}
+
+const getBacklogListsIds = async (config: ClickupConfig): Promise<string[]> => {
+  if (config.backlogLists) {
+    return config.backlogLists;
+  }
+  let folderId;
+  let newConfig = config;
+  if (!config.backlogFolderId) {
+    const { body, clickupConfig } = await getBacklogFolderId(config);
+    folderId = body;
+    newConfig = clickupConfig;
+  } else {
+    folderId = config.backlogFolderId;
+  }
+  const res = await clickupRequest(`/folder/${folderId}/list`);
+  const resJson = await res.json();
+  const lists = resJson.lists.map((list: List) => list.id);
+  const newConfigWithLists = {
+    ...newConfig,
+    backlogLists: lists,
+  }
+  await writeConfigFile(newConfigWithLists);
+  return lists;
+}
+
+const getBacklogTasks = async (config: ClickupConfig): Promise<Task[]> => {
+  const backlogLists = await getBacklogListsIds(config);
+  const tasks = await Promise.all(backlogLists.map(async (list: string) => {
+    const res = await clickupRequest(`/list/${list}/task`);
+    const resJson = await res.json();
+    return resJson.tasks
+      .filter((task: Task) => {
+        const status = task.status.status.toLowerCase();
+        return status === "open" || status === "to do";
+      })
+  }))
+  return tasks.flat();
+}
+
+const getOpenTasks = async (config: ClickupConfig): Promise<Task[]> => {
   const { body: listId } = await getCurrentSprintListId(config);
   const res = await clickupRequest(`/list/${listId}/task`);
   const resJson = await res.json();
@@ -256,6 +327,16 @@ export const getOpenTasks = async (): Promise<Task[]> => {
       return status === "open" || status === "to do";
     });
 };
+
+const getAllOpenTasks = async (): Promise<Task[]> => {
+  const config = await getConfigFile();
+  if (!config) {
+    throw new Error("Clickup config file not found");
+  }
+  const tasks = await getOpenTasks(config);
+  const backlogTasks = await getBacklogTasks(config);
+  return [...tasks, ...backlogTasks];
+}
 
 const getPriorityString = (priority: Priority | null): string => {
   let text
@@ -390,7 +471,7 @@ const taskActionLoop = async (
 
 export const tasksAction = async (): Promise<void> => {
   console.log('fetching tasks...');
-  const tasks = await getOpenTasks();
+  const tasks = await getAllOpenTasks();
   const selectedTask = await chooseTask(tasks);
   await taskActionLoop(selectedTask, false);
 };
