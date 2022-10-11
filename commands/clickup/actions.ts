@@ -2,12 +2,19 @@ import inquirer from "npm:inquirer";
 import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
 import {exec} from "https://deno.land/x/exec/mod.ts";
 import chalk from "https://esm.sh/chalk";
-import {getCachedConfig, getConfig, getPrivateConfig, writeCachedConfig, writeConfig} from "../../utils/configUtils.ts";
+import {
+  getCachedConfig,
+  getConfig,
+  getPrivateConfig,
+  writeCachedConfig,
+  writeConfig,
+  writePrivateConfig
+} from "../../utils/configUtils.ts";
 
 let clickupToken = "";
 try {
   clickupToken = await getPrivateConfig<string>('clickupToken')
-} catch (e) {
+} catch (_e) {
   throw new Error("Clickup token not found");
 }
 
@@ -23,6 +30,25 @@ const clickupRequest = (url: string, data?: Record<string, unknown>) => {
     },
   });
 };
+
+const getUser = (): Promise<User> => {
+  return clickupRequest("/user")
+    .then((res) => res.json())
+    .then((resJson) => resJson.user);
+}
+
+const getUserId = async (config?: PersonalClickupConfig): Promise<number> => {
+  if (config?.userId) {
+    return config.userId;
+  }
+  const user = await getUser();
+  const newConfig = {
+    ...config,
+    userId: user.id,
+  }
+  await writePrivateConfig('clickup_private', newConfig);
+  return user.id;
+}
 
 const getTeamId = async (
   config: ClickupConfig,
@@ -222,10 +248,10 @@ const getBacklogListsIds = async (config: ClickupConfig): Promise<string[]> => {
   return lists;
 }
 
-const getBacklogTasks = async (config: ClickupConfig): Promise<Task[]> => {
+const getBacklogTasks = async (config: ClickupConfig, userId: number): Promise<Task[]> => {
   const backlogLists = await getBacklogListsIds(config);
   const tasks = await Promise.all(backlogLists.map(async (list: string) => {
-    const res = await clickupRequest(`/list/${list}/task?statuses[]=open&statuses[]=to do`);
+    const res = await clickupRequest(`/list/${list}/task?statuses[]=open&statuses[]=to do&assignees[]=${userId}`);
     const resJson = await res.json();
     return resJson.tasks
       .filter((task: Task) => task.assignees.length !== 0)
@@ -233,20 +259,27 @@ const getBacklogTasks = async (config: ClickupConfig): Promise<Task[]> => {
   return tasks.flat();
 }
 
-const getOpenTasks = async (config: ClickupConfig): Promise<Task[]> => {
+const getOpenTasks = async (config: ClickupConfig, userId: number): Promise<Task[]> => {
   const { body: listId } = await getCurrentSprintListId(config);
-  const res = await clickupRequest(`/list/${listId}/task?statuses[]=open&statuses[]=to do`);
+  const res = await clickupRequest(`/list/${listId}/task?statuses[]=open&statuses[]=to do&assignees[]=${userId}`);
   const resJson = await res.json();
   return resJson.tasks
 };
 
 const getAllOpenTasks = async (): Promise<Task[]> => {
   const config = await getConfig<ClickupConfig>("clickup");
+  let personalConfig
+  try {
+    personalConfig = await getPrivateConfig<PersonalClickupConfig>("clickup_private");
+  } catch (_e) {
+    personalConfig = undefined;
+  }
+  const userId = await getUserId(personalConfig);
   if (!config) {
     throw new Error("Clickup config file not found");
   }
-  const tasks = await getOpenTasks(config);
-  const backlogTasks = await getBacklogTasks(config);
+  const tasks = await getOpenTasks(config, userId);
+  const backlogTasks = await getBacklogTasks(config, userId);
   return [...tasks, ...backlogTasks];
 }
 

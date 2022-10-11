@@ -10,6 +10,10 @@ type ClickupConfig = {
   backlogLists?: string[];
 };
 
+type PersonalClickupConfig = {
+  userId: number;
+}
+
 type ClickupCache = {
   currentSprintListId: number;
   date: number;
@@ -72,4 +76,10 @@ type CachedData<A> = {
   lastUpdated: number,
   ttl: number,
   data: A,
+}
+
+type User = {
+  id: number,
+  username: string,
+  color: string,
 }
