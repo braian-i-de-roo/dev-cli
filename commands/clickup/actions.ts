@@ -1,4 +1,4 @@
-import { sub } from "https://cdn.skypack.dev/date-fns";
+import {sub} from "https://cdn.skypack.dev/date-fns";
 import inquirer from "npm:inquirer";
 import {createBranch, createDraftPullRequest, pushBranch} from "../git/actions.ts";
 import {exec} from "https://deno.land/x/exec/mod.ts";
@@ -55,6 +55,10 @@ type Folder = {
   name: string;
 };
 
+type Assignee = {
+  id: number;
+}
+
 type Task = {
   id: number;
   name: string;
@@ -64,6 +68,7 @@ type Task = {
   };
   priority: Priority | null;
   tags: Tag[];
+  assignees: Assignee[];
 };
 
 type List = {
@@ -306,26 +311,19 @@ const getBacklogListsIds = async (config: ClickupConfig): Promise<string[]> => {
 const getBacklogTasks = async (config: ClickupConfig): Promise<Task[]> => {
   const backlogLists = await getBacklogListsIds(config);
   const tasks = await Promise.all(backlogLists.map(async (list: string) => {
-    const res = await clickupRequest(`/list/${list}/task`);
+    const res = await clickupRequest(`/list/${list}/task?statuses[]=open&statuses[]=to do`);
     const resJson = await res.json();
     return resJson.tasks
-      .filter((task: Task) => {
-        const status = task.status.status.toLowerCase();
-        return status === "open" || status === "to do";
-      })
+      .filter((task: Task) => task.assignees.length !== 0)
   }))
   return tasks.flat();
 }
 
 const getOpenTasks = async (config: ClickupConfig): Promise<Task[]> => {
   const { body: listId } = await getCurrentSprintListId(config);
-  const res = await clickupRequest(`/list/${listId}/task`);
+  const res = await clickupRequest(`/list/${listId}/task?statuses[]=open&statuses[]=to do`);
   const resJson = await res.json();
   return resJson.tasks
-    .filter((task: Task) => {
-      const status = task.status.status.toLowerCase();
-      return status === "open" || status === "to do";
-    });
 };
 
 const getAllOpenTasks = async (): Promise<Task[]> => {
