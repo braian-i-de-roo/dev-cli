@@ -1,12 +1,9 @@
 import { exec } from "https://deno.land/x/exec/mod.ts";
-
-const configFileName = ".dev_cli_git_config.json";
-
-const tokenFileName = `${Deno.env.get("HOME")}/.github_token`;
+import {getConfig, getPrivateConfig, writeConfig} from "../../utils/configUtils.ts";
 
 let githubToken = "";
 try {
-  githubToken = await Deno.readTextFile(tokenFileName);
+  githubToken = await getPrivateConfig<string>("github_token");
 } catch (e) {
   throw new Error("Github token not found");
 }
@@ -17,19 +14,6 @@ type GitConfig = {
   defaultBranch?: string;
   githubRepoOwner: string;
   githubRepoName: string;
-};
-
-const getConfigFile = async (): Promise<GitConfig | null> => {
-  try {
-    const res = await Deno.readTextFile(`./${configFileName}`);
-    return JSON.parse(res);
-  } catch (e) {
-    return null;
-  }
-};
-
-const writeConfigFile = async (config: GitConfig): Promise<void> => {
-  await Deno.writeTextFile(`./${configFileName}`, JSON.stringify(config));
 };
 
 const githubRequest = (config: GitConfig, url: string, data?: Record<string, unknown>) => {
@@ -43,7 +27,7 @@ const githubRequest = (config: GitConfig, url: string, data?: Record<string, unk
 }
 
 export const getDefaultBranch = async (): Promise<string> => {
-  const configFile = await getConfigFile();
+  const configFile = await getConfig<GitConfig>('git');
   if (!configFile) {
     throw new Error("config file not found");
   }
@@ -55,11 +39,11 @@ export const getDefaultBranch = async (): Promise<string> => {
   );
   if (defaultBranchRes.status.success) {
     const defaultBranch = (defaultBranchRes.output as string).trim();
-    await writeConfigFile({
+    await writeConfig<GitConfig>('git', {
       defaultBranch: defaultBranch,
       githubRepoOwner: configFile.githubRepoOwner,
       githubRepoName: configFile.githubRepoName,
-    });
+    })
     return defaultBranch;
   }
   throw new Error("could not get default branch");
@@ -144,7 +128,7 @@ const createPullRequest = async (
   branchName: string,
   extraData?: Record<string, unknown>
 ): Promise<void> => {
-  const configFile = await getConfigFile();
+  const configFile = await getConfig<GitConfig>('git');
   if (!configFile) {
     throw new Error("config file not found");
   }
