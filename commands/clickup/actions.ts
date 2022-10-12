@@ -373,7 +373,10 @@ const chooseTask = (tasks: Task[]): Promise<Task> => {
         const aux = task.name
         const priorityString = getPriorityString(task.priority)
         const tagsString = getTagsString(task.tags)
-        return `${aux} ${priorityString} ${tagsString}`
+        return {
+          name: `${aux} ${priorityString} ${tagsString}`,
+          value: aux,
+        }
       }),
     },
   ])
