@@ -11,6 +11,13 @@ import {
   writePrivateConfig
 } from "../../utils/configUtils.ts";
 
+enum PriorityType {
+  URGENT = "urgent",
+  HIGH = "high",
+  NORMAL = "normal",
+  LOW = "low",
+}
+
 let clickupToken = "";
 try {
   clickupToken = await getPrivateConfig<string>('clickupToken')
@@ -266,6 +273,28 @@ const getOpenTasks = async (config: ClickupConfig, userId: number): Promise<Task
   return resJson.tasks
 };
 
+const orderTasks = (tasks: Task[]): Task[] => {
+  return tasks.sort((task1: Task, task2: Task) => {
+    const priority1 = task1.priority? task1.priority.priority : PriorityType.NORMAL
+    const priority2 = task2.priority? task2.priority.priority : PriorityType.NORMAL
+    if (priority1 === priority2) {
+      return 0;
+    }
+    if (priority1 === PriorityType.URGENT || priority2 === PriorityType.LOW) {
+      return -1;
+    }
+    if (priority1 === PriorityType.LOW || priority2 === PriorityType.URGENT) {
+      return 1;
+    }
+    if (priority1 === PriorityType.HIGH || priority2 === PriorityType.NORMAL) {
+      return -1;
+    }
+    if (priority1 === PriorityType.NORMAL || priority2 === PriorityType.HIGH) {
+      return 1;
+    }
+  })
+}
+
 const getAllOpenTasks = async (): Promise<Task[]> => {
   const config = await getConfig<ClickupConfig>("clickup");
   let personalConfig
@@ -280,23 +309,24 @@ const getAllOpenTasks = async (): Promise<Task[]> => {
   }
   const tasks = await getOpenTasks(config, userId);
   const backlogTasks = await getBacklogTasks(config, userId);
-  return [...tasks, ...backlogTasks];
+  const unorderedTasks = [...tasks, ...backlogTasks]
+  return orderTasks(unorderedTasks);
 }
 
 const getPriorityString = (priority: Priority | null): string => {
   let text
   if (priority) {
     switch (priority.priority) {
-      case "urgent":
+      case PriorityType.URGENT:
         text = chalk.red.bold("Urgent");
         break;
-      case "high":
+      case PriorityType.HIGH:
         text = chalk.yellow("High");
         break;
-      case "normal":
+      case PriorityType.NORMAL:
         text =chalk.blue("Normal");
         break;
-      case "low":
+      case PriorityType.LOW:
         text = chalk.grey("Low");
         break
       default:

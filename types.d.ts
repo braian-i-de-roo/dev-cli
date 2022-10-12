@@ -59,9 +59,16 @@ type List = {
   id: number;
 }
 
+enum PriorityType {
+  URGENT = "urgent",
+  HIGH = "high",
+  NORMAL = "normal",
+  LOW = "low",
+}
+
 type Priority = {
   id: string,
-  priority: 'urgent' | 'high' | 'normal' | 'low',
+  priority: PriorityType,
   color: string,
   orderindex: string,
 }
